@@ -16,7 +16,7 @@ const axios = require("axios");
 type UpdatePayload = { newValue: number | boolean | FanLevel | Mode | Swing };
 
 export class API {
-  private static maxRefreshSeconds = 120;
+  private static maxRefreshSeconds = 900; // cache for 15 mins
 
   private baseURL: string;
   private apiKey: string;
