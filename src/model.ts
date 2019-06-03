@@ -1,8 +1,9 @@
 require("@babel/polyfill");
 
+// Interfaces
 export interface DeviceDetails {
   acState: DeviceState;
-  measurements: Measurements;
+  measurements?: Measurements;
 }
 
 export interface APIResponse {
@@ -11,11 +12,11 @@ export interface APIResponse {
 }
 
 export interface DeviceState {
-  on?: boolean;
-  fanLevel?: FanLevel;
-  targetTemperature?: number;
-  mode?: Mode;
-  swing?: Swing;
+  on: boolean;
+  fanLevel: FanLevel;
+  targetTemperature: number;
+  mode: Mode;
+  swing: Swing;
 }
 
 export interface Measurements {
@@ -23,35 +24,37 @@ export interface Measurements {
   humitity: number;
 }
 
-export class DeviceStateUpdate {
-  acState: State;
-
-  constructor(state: State) {
-    this.acState = state;
-  }
+export interface IsOnUpdate {
+  kind: "on";
+  value: boolean;
 }
 
-export class State implements DeviceState {
-  on?: boolean;
-  fanLevel?: FanLevel;
-  targetTemperature?: number;
-  mode?: Mode;
-  swing?: Swing;
-
-  constructor(
-    on?: boolean,
-    fanLevel?: FanLevel,
-    targetTemperature?: number,
-    mode?: Mode,
-    swing?: Swing,
-  ) {
-    this.on = on;
-    this.fanLevel = fanLevel;
-    this.targetTemperature = targetTemperature;
-    this.mode = mode;
-    this.swing = swing;
-  }
+export interface FanLevelUpdate {
+  kind: "fanLevel";
+  value: FanLevel;
 }
+
+export interface TargetTemperatureUpdate {
+  kind: "targetTemperature";
+  value: number;
+}
+
+export interface ModeUpdate {
+  kind: "mode";
+  value: Mode;
+}
+
+export interface SwingUpdate {
+  kind: "swing";
+  value: Swing;
+}
+
+export type Update =
+  | IsOnUpdate
+  | FanLevelUpdate
+  | TargetTemperatureUpdate
+  | ModeUpdate
+  | SwingUpdate;
 
 export enum FanLevel {
   Quiet = "quiet",

@@ -1,7 +1,17 @@
 require("@babel/polyfill");
 
 import { API } from "./api";
-import { State, DeviceStateUpdate, Mode, Swing, FanLevel } from "./model";
+import {
+  IsOnUpdate,
+  Mode,
+  Swing,
+  FanLevel,
+  SwingUpdate,
+  TargetTemperatureUpdate,
+  FanLevelUpdate,
+  ModeUpdate,
+} from "./model";
+import { Log, LogLevel } from "./log";
 
 let Service: any, Characteristic: any;
 
@@ -16,8 +26,6 @@ export default function(homebridge: any) {
   );
 }
 
-type Log = (message: string) => void;
-
 class SensiboAccessory {
   private heaterCoolerService = new Service.HeaterCooler("Living Room AC");
   private log: Log;
@@ -29,9 +37,17 @@ class SensiboAccessory {
   constructor(log: Log, config: any) {
     this.log = log;
     this.deviceID = config["deviceID"];
-    this.api = new API("https://home.sensibo.com", config["apiKey"]);
 
-    this.log("Starting Sensibo service...");
+    const apiKey = config["apiKey"];
+    this.api = new API("https://home.sensibo.com", apiKey, this.log);
+
+    this.log(
+      LogLevel.Debug,
+      "Staring sensibo for device ID " +
+        this.deviceID +
+        " and API key " +
+        apiKey,
+    );
 
     this.heaterCoolerService
       .getCharacteristic(Characteristic.Active)
@@ -76,77 +92,76 @@ class SensiboAccessory {
     return [this.heaterCoolerService];
   }
 
-  // Characteristic.Active.INACTIVE = 0;
-  // Characteristic.Active.ACTIVE = 1;
+  // Active
   getActive = (callback: Function) => {
     this.api.getDeviceDetails(this.deviceID).then(details => {
       if (!details) {
         callback(null);
         return;
       }
-      const newValue = details.acState.on ? 1 : 0;
+      const newValue = details.acState.on
+        ? Characteristic.Active.ACTIVE
+        : Characteristic.Active.INACTIVE;
       callback(null, newValue);
     });
   };
 
   setActive = (newValue: number, callback: Function) => {
-    const newOnState = newValue == 1 ? true : false;
+    const newOnState = newValue == Characteristic.Active.ACTIVE ? true : false;
 
     if (this.isActive && this.isActive == true && newOnState == true) {
       callback(null);
       return;
     }
 
-    const newState = new State();
-    newState.on = newOnState;
+    const update: IsOnUpdate = {
+      kind: "on",
+      value: newOnState,
+    };
 
-    const update = new DeviceStateUpdate(newState);
-
-    this.api.setDeviceState(this.deviceID, update).then(state => {
+    this.api.updateDeviceState(this.deviceID, update).then(state => {
       if (!state) {
         callback(null);
         return;
       }
 
-      const newValue = state.on ? 1 : 0;
       this.isActive = state.on;
+
+      const newValue = state.on
+        ? Characteristic.Active.ACTIVE
+        : Characteristic.Active.INACTIVE;
       callback(null, newValue);
     });
   };
 
-  // Characteristic.CurrentHeaterCoolerState.INACTIVE = 0;
-  // Characteristic.CurrentHeaterCoolerState.IDLE = 1;
-  // Characteristic.CurrentHeaterCoolerState.HEATING = 2;
-  // Characteristic.CurrentHeaterCoolerState.COOLING = 3;
+  // Heater/cooler state
   getCurrentHeaterCoolerState = (callback: Function) => {
     this.api.getDeviceDetails(this.deviceID).then(details => {
       if (!details) {
-        callback(null, 0);
+        callback(null, Characteristic.CurrentHeaterCoolerState.INACTIVE);
         return;
       }
 
       if (details.acState.on == false) {
-        callback(null, 0);
+        callback(null, Characteristic.CurrentHeaterCoolerState.INACTIVE);
         return;
       }
 
       switch (details.acState.mode) {
         case Mode.Heat:
-          callback(null, 2);
+          callback(null, Characteristic.CurrentHeaterCoolerState.HEATING);
           break;
         case Mode.Cool:
-          callback(null, 3);
+          callback(null, Characteristic.CurrentHeaterCoolerState.COOLING);
           break;
         default:
-          callback(null, 0);
+          callback(null, Characteristic.CurrentHeaterCoolerState.INACTIVE);
           break;
       }
     });
   };
 
-  // Characteristic.TargetHeaterCoolerState.AUTO = 0;
-  // Characteristic.TargetHeaterCoolerState.HEAT = 1;
-  // Characteristic.TargetHeaterCoolerState.COOL = 2;
+  // Target heater/cooler state
   getTargetHeaterCoolerState = (callback: Function) => {
     this.api.getDeviceDetails(this.deviceID).then(details => {
       if (!details) {
@@ -156,39 +171,48 @@ class SensiboAccessory {
 
       switch (details.acState.mode) {
         case Mode.Auto:
-          callback(null, 0);
+          callback(null, Characteristic.TargetHeaterCoolerState.AUTO);
           break;
         case Mode.Heat:
-          callback(null, 1);
+          callback(null, Characteristic.TargetHeaterCoolerState.HEAT);
           break;
         case Mode.Cool:
-          callback(null, 2);
+          callback(null, Characteristic.TargetHeaterCoolerState.COOL);
           break;
       }
     });
   };
 
   setTargetHeaterCoolerState = (newValue: number, callback: Function) => {
-    const newState = new State();
+    var update: ModeUpdate;
     switch (newValue) {
-      case 0:
-        newState.mode = Mode.Auto;
+      case Characteristic.TargetHeaterCoolerState.AUTO:
+        update = {
+          kind: "mode",
+          value: Mode.Auto,
+        };
         break;
-      case 1:
-        newState.mode = Mode.Heat;
+      case Characteristic.TargetHeaterCoolerState.HEAT:
+        update = {
+          kind: "mode",
+          value: Mode.Heat,
+        };
         break;
-      case 2:
-        newState.mode = Mode.Cool;
+      case Characteristic.TargetHeaterCoolerState.COOL:
+        update = {
+          kind: "mode",
+          value: Mode.Cool,
+        };
+        break;
+      default:
+        update = {
+          kind: "mode",
+          value: Mode.Auto,
+        };
         break;
     }
 
-    newState.on = true;
-
-    this.isActive = true;
-
-    const update = new DeviceStateUpdate(newState);
-
-    this.api.setDeviceState(this.deviceID, update).then(state => {
+    this.api.updateDeviceState(this.deviceID, update).then(state => {
       if (!state) {
         callback(null, 0);
         return;
@@ -198,13 +222,13 @@ class SensiboAccessory {
 
       switch (state.mode) {
         case Mode.Auto:
-          callback(null, 0);
+          callback(null, Characteristic.TargetHeaterCoolerState.AUTO);
           break;
         case Mode.Heat:
-          callback(null, 1);
+          callback(null, Characteristic.TargetHeaterCoolerState.HEAT);
           break;
         case Mode.Cool:
-          callback(null, 2);
+          callback(null, Characteristic.TargetHeaterCoolerState.COOL);
           break;
       }
     });
@@ -218,14 +242,17 @@ class SensiboAccessory {
         return;
       }
 
+      if (!details.measurements) {
+        callback(null);
+        return;
+      }
+
       const currentValue = details.measurements.temperature;
       callback(null, currentValue);
     });
   };
 
   // Swing Mode
-  // Characteristic.SwingMode.SWING_DISABLED = 0;
-  // Characteristic.SwingMode.SWING_ENABLED = 1;
   getSwingMode = (callback: Function) => {
     this.api.getDeviceDetails(this.deviceID).then(details => {
       if (!details) {
@@ -237,10 +264,10 @@ class SensiboAccessory {
 
       switch (currentValue) {
         case Swing.FixedMiddle:
-          callback(null, 0);
+          callback(null, Characteristic.SwingMode.SWING_DISABLED);
           break;
         case Swing.RangeFull:
-          callback(null, 1);
+          callback(null, Characteristic.SwingMode.SWING_ENABLED);
           break;
         default:
           callback(null);
@@ -250,34 +277,40 @@ class SensiboAccessory {
   };
 
   setSwingMode = (newValue: number, callback: Function) => {
-    const newState = new State();
-
+    var update: SwingUpdate;
     switch (newValue) {
-      case 0:
-        newState.swing = Swing.FixedMiddle;
+      case Characteristic.SwingMode.SWING_DISABLED:
+        update = {
+          kind: "swing",
+          value: Swing.FixedMiddle,
+        };
         break;
-      case 1:
-        newState.swing = Swing.RangeFull;
+      case Characteristic.SwingMode.SWING_ENABLED:
+        update = {
+          kind: "swing",
+          value: Swing.RangeFull,
+        };
         break;
       default:
-        newState.swing = Swing.FixedMiddle;
+        update = {
+          kind: "swing",
+          value: Swing.FixedMiddle,
+        };
         break;
     }
 
-    const update = new DeviceStateUpdate(newState);
-
-    this.api.setDeviceState(this.deviceID, update).then(state => {
+    this.api.updateDeviceState(this.deviceID, update).then(state => {
       if (!state) {
-        callback(null, 0);
+        callback(null);
         return;
       }
 
       switch (state.swing) {
         case Swing.FixedMiddle:
-          callback(null, 0);
+          callback(null, Characteristic.SwingMode.SWING_DISABLED);
           break;
         case Swing.RangeFull:
-          callback(null, 1);
+          callback(null, Characteristic.SwingMode.SWING_ENABLED);
           break;
         default:
           callback(null);
@@ -300,11 +333,12 @@ class SensiboAccessory {
   };
 
   setCoolingThresholdTemperature = (newValue: number, callback: Function) => {
-    const newState = new State();
-    newState.targetTemperature = Math.round(newValue);
-    const update = new DeviceStateUpdate(newState);
+    const update: TargetTemperatureUpdate = {
+      kind: "targetTemperature",
+      value: Math.round(newValue),
+    };
 
-    this.api.setDeviceState(this.deviceID, update).then(state => {
+    this.api.updateDeviceState(this.deviceID, update).then(state => {
       if (!state) {
         callback(null, 0);
         return;
@@ -328,11 +362,12 @@ class SensiboAccessory {
   };
 
   setHeatingThresholdTemperature = (newValue: number, callback: Function) => {
-    const newState = new State();
-    newState.targetTemperature = Math.round(newValue);
-    const update = new DeviceStateUpdate(newState);
+    const update: TargetTemperatureUpdate = {
+      kind: "targetTemperature",
+      value: Math.round(newValue),
+    };
 
-    this.api.setDeviceState(this.deviceID, update).then(state => {
+    this.api.updateDeviceState(this.deviceID, update).then(state => {
       if (!state) {
         callback(null, 0);
         return;
@@ -363,7 +398,6 @@ class SensiboAccessory {
   };
 
   setRotationSpeed = (newValue: number, callback: Function) => {
-    const newState = new State();
     const newFanLevel = SensiboAccessory.fanLevelForNumber(newValue);
 
     if (this.fanLevel == newFanLevel) {
@@ -371,15 +405,14 @@ class SensiboAccessory {
       return;
     }
 
-    newState.fanLevel = newFanLevel;
-    newState.on = true;
-
     this.fanLevel = newFanLevel;
-    this.isActive = true;
 
-    const update = new DeviceStateUpdate(newState);
+    const update: FanLevelUpdate = {
+      kind: "fanLevel",
+      value: newFanLevel,
+    };
 
-    this.api.setDeviceState(this.deviceID, update).then(state => {
+    this.api.updateDeviceState(this.deviceID, update).then(state => {
       if (!state || !state.fanLevel) {
         callback(null, 0);
         return;
