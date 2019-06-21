@@ -1,4 +1,4 @@
-# Sensibo Sky Accessory
+# Sensibo Sky Homebridge plugin
 
 I primarly wrote this for myself so it's not very robust. It currently only supports one device.
 
