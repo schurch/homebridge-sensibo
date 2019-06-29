@@ -13,7 +13,8 @@ import {
 } from "./model";
 import { Log, LogLevel } from "./log";
 
-let Service: any, Characteristic: any;
+let Service: any;
+let Characteristic: any;
 
 export default function(homebridge: any) {
   Service = homebridge.hap.Service;
@@ -27,7 +28,7 @@ export default function(homebridge: any) {
 }
 
 class SensiboAccessory {
-  private heaterCoolerService = new Service.HeaterCooler("Living Room AC");
+  private heaterCoolerService = new Service.HeaterCooler("TEST AC");
   private log: Log;
   private api: API;
   private deviceID: string;
@@ -39,7 +40,7 @@ class SensiboAccessory {
     this.deviceID = config["deviceID"];
 
     const apiKey = config["apiKey"];
-    this.api = new API("https://home.sensibo.com", apiKey, this.log);
+    this.api = new API(apiKey, this.log);
 
     this.log(
       LogLevel.Debug,

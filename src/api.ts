@@ -2,8 +2,10 @@ require("@babel/polyfill");
 
 import {
   DeviceDetails,
-  APIResponse,
+  DeviceDetailsAPIResponse,
+  GetDevicesAPIResponse,
   DeviceState,
+  DeviceSummary,
   Update,
   FanLevel,
   Mode,
@@ -16,18 +18,27 @@ const axios = require("axios");
 type UpdatePayload = { newValue: number | boolean | FanLevel | Mode | Swing };
 
 export class API {
-  private static maxRefreshSeconds = 900; // cache for 15 mins
+  private static defaultBaseURL = "https://home.sensibo.com";
+  private static maxRefreshSeconds = 60; // time to cache in seconds
 
   private baseURL: string;
   private apiKey: string;
   private cachedDetails?: DeviceDetails;
   private lastRequestTime?: number;
   private log: Log;
+  private existingRequest: Promise<DeviceDetails | null> | null;
 
-  constructor(baseURL: string, apiKey: string, log: Log) {
-    this.baseURL = baseURL;
+  constructor(apiKey: string, log: Log) {
+    this.baseURL = API.defaultBaseURL;
     this.apiKey = apiKey;
     this.log = log;
+    this.existingRequest = null;
+  }
+
+  private allDevicesURL(): string {
+    const path = this.baseURL + "/api/v2/users/me/pods";
+    const queryStringParameters = "apiKey=" + this.apiKey + "&fields=id,room";
+    return path + "?" + queryStringParameters;
   }
 
   private deviceURL(deviceID: string): string {
@@ -69,6 +80,22 @@ export class API {
   }
 
   async getDeviceDetails(deviceID: string): Promise<DeviceDetails | null> {
+    if (this.existingRequest) {
+      this.log(LogLevel.Debug, "Get device details request in flight");
+      return this.existingRequest;
+    }
+
+    this.existingRequest = this.privateGetDeviceDetails(deviceID);
+    this.existingRequest.finally(() => {
+      this.existingRequest = null;
+    });
+
+    return this.existingRequest;
+  }
+
+  private async privateGetDeviceDetails(
+    deviceID: string,
+  ): Promise<DeviceDetails | null> {
     if (this.shouldUseCachedDetails() && this.cachedDetails) {
       this.log(LogLevel.Debug, "Using cached device details response");
       return this.cachedDetails;
@@ -79,10 +106,32 @@ export class API {
     try {
       const url = this.deviceURL(deviceID);
       const response = await axios.get(url);
-      const apiResponse: APIResponse = response.data;
+      const apiResponse: DeviceDetailsAPIResponse = response.data;
+      this.log(
+        LogLevel.Debug,
+        "Get details response: " + JSON.stringify(apiResponse),
+      );
 
       this.lastRequestTime = Date.now();
       this.cachedDetails = apiResponse.result;
+
+      return apiResponse.result;
+    } catch (error) {
+      this.log(LogLevel.Error, error);
+
+      return null;
+    }
+  }
+
+  async getDevices(): Promise<DeviceSummary[] | null> {
+    try {
+      const url = this.allDevicesURL();
+      const response = await axios.get(url);
+      const apiResponse: GetDevicesAPIResponse = response.data;
+      this.log(
+        LogLevel.Debug,
+        "Get devices response: " + JSON.stringify(apiResponse),
+      );
 
       return apiResponse.result;
     } catch (error) {
@@ -100,7 +149,11 @@ export class API {
       const payload = API.payloadForUpdate(update);
       const url = this.deviceUpdateURL(deviceID, update);
       const response = await axios.patch(url, payload);
-      const apiResponse: APIResponse = response.data;
+      const apiResponse: DeviceDetailsAPIResponse = response.data;
+      this.log(
+        LogLevel.Debug,
+        "Update device state response: " + JSON.stringify(apiResponse),
+      );
 
       this.lastRequestTime = Date.now();
       this.cachedDetails = apiResponse.result;
@@ -120,7 +173,11 @@ export class API {
     try {
       const url = this.deviceSetURL(deviceID);
       const response = await axios.post(url, state);
-      const apiResponse: APIResponse = response.data;
+      const apiResponse: DeviceDetailsAPIResponse = response.data;
+      this.log(
+        LogLevel.Debug,
+        "Set device state response: " + JSON.stringify(apiResponse),
+      );
 
       this.lastRequestTime = Date.now();
       this.cachedDetails = apiResponse.result;

@@ -1,12 +1,27 @@
 require("@babel/polyfill");
 
 // Interfaces
+export interface GetDevicesAPIResponse {
+  status: string;
+  result: DeviceSummary[];
+}
+
+export interface DeviceSummary {
+  id: string;
+  room: Room;
+}
+
+export interface Room {
+  name: string;
+  icon: string;
+}
+
 export interface DeviceDetails {
   acState: DeviceState;
   measurements?: Measurements;
 }
 
-export interface APIResponse {
+export interface DeviceDetailsAPIResponse {
   status: string;
   result: DeviceDetails;
 }
@@ -60,7 +75,7 @@ export enum FanLevel {
   Quiet = "quiet",
   Low = "low",
   Medium = "medium",
-  MediumHigh = "mediumHigh",
+  MediumHigh = "medium_high",
   High = "high",
   Auto = "auto",
 }
