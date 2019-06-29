@@ -10,44 +10,149 @@ import {
   TargetTemperatureUpdate,
   FanLevelUpdate,
   ModeUpdate,
+  DeviceSummary,
 } from "./model";
 import { Log, LogLevel } from "./log";
 
+const pluginName = "homebridge-sensibo";
+const platformName = "Sensibo";
+
 let Service: any;
 let Characteristic: any;
+let Accessory: any;
+let UUIDGen: any;
 
 export default function(homebridge: any) {
   Service = homebridge.hap.Service;
   Characteristic = homebridge.hap.Characteristic;
+  Accessory = homebridge.platformAccessory;
+  UUIDGen = homebridge.hap.uuid;
 
-  homebridge.registerAccessory(
-    "homebridge-sensibo",
-    "Sensibo",
-    SensiboAccessory,
-  );
+  homebridge.registerPlatform(pluginName, platformName, SensiboPlatform, true);
+}
+
+class SensiboPlatform {
+  private homebridgeAPI: any;
+  private api!: API;
+  private apiKey: string;
+  private log: Log;
+  private accessories: Map<string, SensiboAccessory>;
+
+  constructor(log: Log, config: any, api: any) {
+    this.accessories = new Map();
+    this.log = log;
+    this.apiKey = config["apiKey"];
+
+    if (!this.apiKey) {
+      this.log(
+        LogLevel.Error,
+        "Please specify the Homebridge API key in the platform config.",
+      );
+      return;
+    }
+
+    if (!api) {
+      this.log(
+        LogLevel.Error,
+        "Expected the Homebridge API. Please update to latest version of Homebridge.",
+      );
+      return;
+    }
+
+    this.homebridgeAPI = api;
+    this.api = new API(this.apiKey, this.log);
+
+    this.homebridgeAPI.on("didFinishLaunching", () => {
+      this.log(LogLevel.Debug, "Did finish launching platform...");
+
+      this.api
+        .getDevices()
+        .then(devices => {
+          if (devices == null) {
+            this.log(LogLevel.Error, "No devices information returned.");
+            return;
+          }
+
+          devices.forEach(device => {
+            this.addDevice(device);
+          });
+        })
+        .catch(error => {
+          this.log(LogLevel.Error, "Error loading devices: " + error);
+        });
+    });
+  }
+
+  private addDevice(deviceSummary: DeviceSummary) {
+    const deviceID = deviceSummary.id;
+    if (this.accessories.has(deviceID)) {
+      this.log(LogLevel.Debug, "Already loaded device with ID " + deviceID);
+      return;
+    }
+
+    this.log(LogLevel.Debug, "Adding new device with ID " + deviceID);
+
+    const uuid = UUIDGen.generate(deviceSummary.id);
+    const name = deviceSummary.room.name + " AC";
+
+    const newAccessory = new Accessory(name, uuid);
+    newAccessory.addService(Service.HeaterCooler, name);
+    newAccessory.context.deviceID = deviceSummary.id;
+
+    const sensiboAccessory = new SensiboAccessory(
+      this.apiKey,
+      newAccessory.context.deviceID,
+      newAccessory.getService(Service.HeaterCooler),
+      this.log,
+    );
+
+    this.homebridgeAPI.registerPlatformAccessories(pluginName, platformName, [
+      newAccessory,
+    ]);
+
+    this.accessories.set(deviceID, sensiboAccessory);
+  }
+
+  configureAccessory(homebridgeAccessory: any) {
+    homebridgeAccessory.reachable = true;
+
+    const deviceID: string = homebridgeAccessory.context.deviceID;
+
+    this.log(LogLevel.Debug, "Loading cached device with ID " + deviceID);
+
+    const sensiboAccessory = new SensiboAccessory(
+      this.apiKey,
+      deviceID,
+      homebridgeAccessory.getService(Service.HeaterCooler),
+      this.log,
+    );
+
+    this.accessories.set(deviceID, sensiboAccessory);
+  }
 }
 
 class SensiboAccessory {
-  private heaterCoolerService = new Service.HeaterCooler("TEST AC");
   private log: Log;
   private api: API;
   private deviceID: string;
+  private heaterCoolerService: any;
   private isActive?: boolean;
   private fanLevel?: FanLevel;
 
-  constructor(log: Log, config: any) {
+  constructor(
+    apiKey: string,
+    deviceID: string,
+    heaterCoolerService: any,
+    log: Log,
+  ) {
     this.log = log;
-    this.deviceID = config["deviceID"];
-
-    const apiKey = config["apiKey"];
+    this.deviceID = deviceID;
     this.api = new API(apiKey, this.log);
+    this.heaterCoolerService = heaterCoolerService;
 
     this.log(
       LogLevel.Debug,
-      "Staring sensibo for device ID " +
-        this.deviceID +
-        " and API key " +
-        apiKey,
+      "Initializing an accessory with device ID " + this.deviceID,
     );
 
     this.heaterCoolerService
@@ -87,10 +192,6 @@ class SensiboAccessory {
       .getCharacteristic(Characteristic.RotationSpeed)
       .on("get", this.getRotationSpeed)
       .on("set", this.setRotationSpeed);
-  }
-
-  getServices() {
-    return [this.heaterCoolerService];
   }
 
   // Active
