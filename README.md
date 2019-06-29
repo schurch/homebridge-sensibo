@@ -1,6 +1,6 @@
 # Sensibo Sky Homebridge plugin
 
-I primarily wrote this for myself so it's not very robust. It currently only supports one device.
+I primarily wrote this for myself so it's not very robust.
 
 ## Usage
 
