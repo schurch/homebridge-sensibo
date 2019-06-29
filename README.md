@@ -29,3 +29,7 @@ I primarily wrote this for myself so it's not very robust.
 }
 
 ```
+
+4. Clone this repo locally
+5. From the repo directory run `npm run build`
+6. Run `npm install -g`
